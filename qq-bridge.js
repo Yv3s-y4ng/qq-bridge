@@ -227,7 +227,7 @@ async function handleMessage(openid, msgId, content, attachments = []) {
       await injectToSession(messageContent);
       return;
     }
-    await sendC2CMessage(openid, msgId, '你好！请选择模式：\n1. 情感陪伴模式\n2. 普通对话模式');
+    await sendC2CMessage(openid, msgId, '你好！欢迎使用，请先查看使用教程：\nhttps://q.qq.com/qqbot/openclaw/index.html');
     return;
   }
 
