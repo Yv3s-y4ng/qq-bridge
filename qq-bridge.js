@@ -4,7 +4,11 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import http from 'http';
 import WebSocket from 'ws';
-import { getAccessToken, getGatewayUrl } from './qq-api.js';
+import { getAccessToken, getGatewayUrl, sendC2CMessage } from './qq-api.js';
+import { getUser, setUserMode, setSetupStep, resetUser } from './companion-state.js';
+import { handleSetupStep, sendOnboardingPrompt } from './companion-setup.js';
+import { companionChat } from './companion-chat.js';
+import { sendCompanionImage, sendCompanionVideo } from './companion-media.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: join(__dirname, '.env') });
@@ -158,15 +162,67 @@ setInterval(async () => {
 // --- Message handler ---
 async function handleMessage(openid, msgId, content) {
   log(`Message from ${openid.slice(0, 8)}...: ${content.slice(0, 50)}`);
+  pushToMonitor(openid, content);
 
-  const messageContent = `${content}\n[QQ:openid=${openid}·msgid=${msgId}]`;
+  const u = getUser(openid);
 
-  try {
-    const ok = await injectToSession(messageContent);
-    if (ok) {
-      log(`Injected to session: ${openid.slice(0, 8)}...`);
-      pushToMonitor(openid, content);
+  // --- Global commands (work in any mode) ---
+  if (content.trim() === '/reset') {
+    resetUser(openid);
+    await sendC2CMessage(openid, msgId, '已重置，重新开始！\n\n选择模式：\n1. 情感陪伴模式\n2. 普通对话模式（默认）');
+    return;
+  }
+  if (content.trim() === '/mode') {
+    const next = u.mode === 'companion' ? 'normal' : 'companion';
+    setUserMode(openid, next);
+    if (next === 'companion') {
+      setSetupStep(openid, 'choose_persona');
+      await sendOnboardingPrompt(openid, msgId, sendC2CMessage);
+    } else {
+      await sendC2CMessage(openid, msgId, '已切换到普通对话模式。');
     }
+    return;
+  }
+
+  // --- First message: mode selection ---
+  if (u.mode === 'normal' && u.setupStep === 'choose_persona' && !u.persona) {
+    if (content.trim() === '1') {
+      setUserMode(openid, 'companion');
+      await sendOnboardingPrompt(openid, msgId, sendC2CMessage);
+      return;
+    }
+    if (content.trim() === '2') {
+      const messageContent = `${content}\n[QQ:openid=${openid}·msgid=${msgId}]`;
+      await injectToSession(messageContent);
+      return;
+    }
+    await sendC2CMessage(openid, msgId, '你好！请选择模式：\n1. 情感陪伴模式\n2. 普通对话模式');
+    return;
+  }
+
+  // --- Companion mode ---
+  if (u.mode === 'companion') {
+    if (u.setupStep !== 'done') {
+      await handleSetupStep(openid, msgId, content, sendC2CMessage);
+      return;
+    }
+    try {
+      const { text, imageScene, videoScene } = await companionChat(openid, content);
+      if (text) await sendC2CMessage(openid, msgId, text);
+      if (imageScene) await sendCompanionImage(openid, msgId, imageScene, u.persona);
+      if (videoScene) await sendCompanionVideo(openid, msgId, videoScene, u.persona);
+    } catch (e) {
+      log(`Companion chat error: ${e.message}`);
+      await sendC2CMessage(openid, msgId, '抱歉，出了点问题，请稍后再试。');
+    }
+    return;
+  }
+
+  // --- Normal mode: inject to HappyCapy session ---
+  try {
+    const messageContent = `${content}\n[QQ:openid=${openid}·msgid=${msgId}]`;
+    const ok = await injectToSession(messageContent);
+    if (ok) log(`Injected to session: ${openid.slice(0, 8)}...`);
   } catch (e) {
     log(`Handle error: ${e.message}`);
   }
