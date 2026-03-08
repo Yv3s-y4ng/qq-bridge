@@ -5,7 +5,19 @@ const CHAT_URL = 'https://ai-gateway.trickle-lab.tech/api/v1/chat/completions';
 const CHAT_MODEL = 'anthropic/claude-sonnet-4.5';
 
 // Keywords that mean "send me a selfie / show yourself"
-const SELFIE_PATTERNS = /发(个|张|一张)?自拍|自拍(发|给我)|让我看看你|发张照片|给我看看|发图|发照片|来张照片|照片发我|晒(个|张)照|看看你长什么/;
+const SELFIE_PATTERNS = /发(个|张|一张)?自拍|自拍(发|给我)|让我看看你|晒(个|张)照|看看你长什么/;
+
+// Keywords that mean "send me any image (not a selfie)"
+// e.g. "给我一张卡皮图片", "来张猫咪照片", "发张动物图", "能发图吗"
+const IMAGE_REQUEST_PATTERNS = /给我(发|来)?(一张|张|几张)?(.{1,20}?)(图片|照片|图)|来(一张|张)?(.{1,20}?)(图|图片|照片)|发(一张|张)?(.{1,20}?)(图|图片|照片)|能发图吗|可以发图吗|发(张|个)?图/;
+
+// Extract the requested image subject from message
+function extractImageSubject(msg) {
+  const m = msg.match(
+    /(?:给我(?:发|来)?|来|发)(?:一张|张|几张)?(.{1,20}?)(?:图片|照片|图|的图|的照片)/
+  );
+  return m ? m[1].trim() : msg.replace(/给我|发|来|一张|张|图片|照片|图/g, '').trim() || '可爱的场景';
+}
 
 // Per-persona in-character selfie reactions (text sent before the image)
 const SELFIE_REACTIONS = {
@@ -15,6 +27,16 @@ const SELFIE_REACTIONS = {
   shen:   '……',
   bai:    '嗯，等我。',
   ling:   '哦？想看我？……行吧。',
+};
+
+// Per-persona reactions for general image sends
+const IMAGE_REACTIONS = {
+  ice:    '……给你。',
+  orange: '找到啦～给你！',
+  star:   '……。',
+  shen:   '嗯。',
+  bai:    '给你找了一张。',
+  ling:   '行，给你搞一张。',
 };
 
 // Parse Claude's raw reply into { text, imageScene, videoScene }
@@ -49,12 +71,30 @@ function handleSelfieRequest(openid, userMessage) {
   return { text, imageScene: sceneDesc, videoScene: null };
 }
 
+// Bypass Claude for general image requests — user asked for a pic of something
+function handleImageRequest(openid, userMessage) {
+  const u = getUser(openid);
+  const persona = u.persona;
+  const text = IMAGE_REACTIONS[persona?.id] ?? '给你。';
+  const subject = extractImageSubject(userMessage);
+  const imageScene = `${subject}，高清，自然真实，精美摄影`;
+  addHistory(openid, 'user', userMessage);
+  addHistory(openid, 'assistant', text);
+  return { text, imageScene, videoScene: null };
+}
+
 // Call AI Gateway and return parsed reply + update history
 export async function companionChat(openid, userMessage) {
   // Intercept selfie requests — Claude's safety training will refuse these;
   // handle entirely in-bridge using persona refDescription instead.
   if (SELFIE_PATTERNS.test(userMessage)) {
     return handleSelfieRequest(openid, userMessage);
+  }
+
+  // Intercept general image requests — Claude also refuses "I can't send images";
+  // extract subject and generate directly.
+  if (IMAGE_REQUEST_PATTERNS.test(userMessage)) {
+    return handleImageRequest(openid, userMessage);
   }
 
   const u = getUser(openid);
