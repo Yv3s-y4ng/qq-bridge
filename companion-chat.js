@@ -3,7 +3,7 @@ import { getUser, addHistory } from './companion-state.js';
 
 const CHAT_URL = 'https://ai-gateway.trickle-lab.tech/api/v1/chat/completions';
 const CHAT_MODEL = 'anthropic/claude-sonnet-4.5';
-const CLASSIFY_MODEL = 'anthropic/claude-haiku-4-5-20251001';
+const CLASSIFY_MODEL = 'anthropic/claude-haiku-4.5';
 
 // Semantic intent classification — replaces all regex pattern matching
 // Returns: 'selfie' | 'image' | 'chat'
