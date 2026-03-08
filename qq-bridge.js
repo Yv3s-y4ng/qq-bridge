@@ -6,6 +6,7 @@ import http from 'http';
 import WebSocket from 'ws';
 import { getAccessToken, getGatewayUrl, sendC2CMessage } from './qq-api.js';
 import { getUser, setUserMode, setSetupStep, resetUser } from './companion-state.js';
+import { transcribeVoice } from './voice-transcribe.js';
 import { handleSetupStep, sendOnboardingPrompt } from './companion-setup.js';
 import { companionChat } from './companion-chat.js';
 import { sendCompanionImage, sendCompanionVideo } from './companion-media.js';
@@ -160,10 +161,27 @@ setInterval(async () => {
 }, 4 * 60 * 1000);
 
 // --- Message handler ---
-async function handleMessage(openid, msgId, content) {
-  log(`Message from ${openid.slice(0, 8)}...: ${content.slice(0, 50)}`);
-  pushToMonitor(openid, content);
+async function handleMessage(openid, msgId, content, attachments = []) {
+  log(`Message from ${openid.slice(0, 8)}...: ${content.slice(0, 50)}${attachments.length ? ` [+${attachments.length} attachment(s)]` : ''}`);
 
+  // --- Voice message handling: transcribe before anything else ---
+  const voiceAttachment = attachments.find(a =>
+    a.content_type?.startsWith('audio/') ||
+    /\.(silk|amr|ogg|mp3|wav|m4a|mp4|opus)(\?|$)/i.test(a.url || '')
+  );
+  if (voiceAttachment && !content) {
+    log(`Voice message from ${openid.slice(0, 8)}..., url: ${voiceAttachment.url?.slice(0, 80)}`);
+    await sendC2CMessage(openid, msgId, '🎙️ 正在识别语音...');
+    const transcript = await transcribeVoice(voiceAttachment);
+    if (!transcript) {
+      await sendC2CMessage(openid, msgId, '抱歉，暂时无法识别这段语音，请发文字吧～');
+      return;
+    }
+    log(`Voice transcript: ${transcript.slice(0, 80)}`);
+    content = transcript;
+  }
+
+  pushToMonitor(openid, content);
   const u = getUser(openid);
 
   // --- Global commands (work in any mode) ---
@@ -184,14 +202,17 @@ async function handleMessage(openid, msgId, content) {
     return;
   }
 
-  // --- First message: mode selection ---
+  // --- First message: mode selection (only for brand-new users) ---
   if (u.mode === 'normal' && u.setupStep === 'choose_persona' && !u.persona) {
     if (content.trim() === '1') {
       setUserMode(openid, 'companion');
+      setSetupStep(openid, 'choose_persona'); // stays in companion setup flow
       await sendOnboardingPrompt(openid, msgId, sendC2CMessage);
       return;
     }
     if (content.trim() === '2') {
+      // Mark past onboarding so this block is never entered again
+      setSetupStep(openid, 'normal_done');
       const messageContent = `${content}\n[QQ:openid=${openid}·msgid=${msgId}]`;
       await injectToSession(messageContent);
       return;
@@ -267,7 +288,9 @@ async function connect(retryDelay = 1000) {
         const openid = d.author?.user_openid;
         const msgId = d.id;
         const content = (d.content || '').trim();
-        handleMessage(openid, msgId, content);
+        const attachments = d.attachments || [];
+        if (attachments.length) log(`Attachments: ${JSON.stringify(attachments).slice(0, 200)}`);
+        handleMessage(openid, msgId, content, attachments);
       }
     });
 
