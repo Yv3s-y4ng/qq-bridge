@@ -5,10 +5,17 @@ import {
 
 const PERSONA_PROMPT = `你好！我是你的专属陪伴，先来认识一下吧～
 
-请选择你的角色：
+请选择你的陪伴：
+【女生】
 1. 冰山美人（高冷，慢热，偶尔嘴硬）
 2. 活泼少女（开朗，爱撒娇，情绪外露）
-3. 神秘精灵（捉摸不透，偶尔腹黑）`;
+3. 神秘精灵（捉摸不透，偶尔腹黑）
+【男生】
+4. 冷峻总裁（话少，城府深，实则在乎）
+5. 温柔学长（体贴，总在需要时出现）
+6. 神秘浪子（不羁，偶尔说出惊人深情话）
+【自定义】
+7. 发一张你喜欢的人的照片，我来扮演ta`;
 
 const RELATIONSHIP_PROMPT = `请选择我们的关系：
 1. 陌生人（需要你主动，我不会主动搭话）
@@ -34,7 +41,7 @@ export async function handleSetupStep(openid, msgId, text, sendFn) {
     return handlePersonaChoice(openid, msgId, choice, sendFn);
   }
   if (u.setupStep === 'awaiting_image') {
-    // text is image URL extracted by bridge; treat as custom persona description
+    // text is image URL extracted by bridge; treat as custom persona photo
     return handleCustomImage(openid, msgId, choice, sendFn);
   }
   if (u.setupStep === 'choose_relationship') {
@@ -56,13 +63,15 @@ export async function handleSetupStep(openid, msgId, text, sendFn) {
 }
 
 async function handlePersonaChoice(openid, msgId, choice, sendFn) {
-  if (choice === '4') {
+  // Option 7: custom image upload
+  if (choice === '7') {
     setSetupStep(openid, 'awaiting_image');
-    await sendFn(openid, msgId, '请发送一张图片，我会以那个形象陪伴你～');
+    await sendFn(openid, msgId, '请发送一张你喜欢的人的照片，我会以ta的形象陪伴你～');
     return true;
   }
   const idx = parseInt(choice, 10) - 1;
-  const preset = PERSONAS[idx >= 0 && idx < 3 ? idx : 0];
+  // Valid indices: 0-5 (6 presets), default to 0
+  const preset = PERSONAS[idx >= 0 && idx < PERSONAS.length ? idx : 0];
   setPersona(openid, {
     name: preset.name,
     personality: preset.personality,
@@ -77,10 +86,10 @@ async function handlePersonaChoice(openid, msgId, choice, sendFn) {
 async function handleCustomImage(openid, msgId, imageUrl, sendFn) {
   // imageUrl is passed by bridge when a QQ image message is received
   setPersona(openid, {
-    name: '她',
+    name: 'ta',
     personality: '神秘而温柔，性格随对话自然演化',
     refImageUrl: imageUrl,
-    refDescription: '按你上传的图片外貌',
+    refDescription: '按你上传的照片外貌',
   });
   setSetupStep(openid, 'choose_relationship');
   await sendFn(openid, msgId, RELATIONSHIP_PROMPT);
