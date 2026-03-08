@@ -194,11 +194,21 @@ async function handleMessage(openid, msgId, content, attachments = []) {
     const next = u.mode === 'companion' ? 'normal' : 'companion';
     setUserMode(openid, next);
     if (next === 'companion') {
-      setSetupStep(openid, 'choose_persona');
-      await sendOnboardingPrompt(openid, msgId, sendC2CMessage);
+      if (u.persona && u.setupStep === 'done') {
+        // Already set up — jump straight back into companion mode
+        await sendC2CMessage(openid, msgId, `已切换到情感陪伴模式，${u.persona.name}在的。`);
+      } else {
+        setSetupStep(openid, 'choose_persona');
+        await sendOnboardingPrompt(openid, msgId, sendC2CMessage);
+      }
     } else {
       await sendC2CMessage(openid, msgId, '已切换到普通对话模式。');
     }
+    return;
+  }
+
+  if (/怎么用|如何使用|怎么玩|有什么功能|帮助|help|使用说明|教程|怎么操作/i.test(content.trim())) {
+    await sendC2CMessage(openid, msgId, '使用教程：https://q.qq.com/qqbot/openclaw/index.html');
     return;
   }
 
