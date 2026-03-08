@@ -3,20 +3,52 @@ import { getUser, addHistory } from './companion-state.js';
 
 const CHAT_URL = 'https://ai-gateway.trickle-lab.tech/api/v1/chat/completions';
 const CHAT_MODEL = 'anthropic/claude-sonnet-4.5';
+const CLASSIFY_MODEL = 'anthropic/claude-haiku-4.5';
 
-// Keywords that mean "send me a selfie / show yourself"
-const SELFIE_PATTERNS = /发(个|张|一张)?自拍|自拍(发|给我)|让我看看你|晒(个|张)照|看看你长什么/;
+// Semantic intent classification — replaces all regex pattern matching
+// Returns: 'selfie' | 'image' | 'chat'
+async function classifyIntent(userMessage) {
+  try {
+    const res = await fetch(CHAT_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
+        'Content-Type': 'application/json',
+        Origin: 'https://trickle.so',
+      },
+      body: JSON.stringify({
+        model: CLASSIFY_MODEL,
+        messages: [{
+          role: 'user',
+          content: `判断以下用户消息的意图，只回复一个英文单词：
 
-// Keywords that mean "send me any image (not a selfie)"
-// e.g. "给我一张卡皮图片", "来张猫咪照片", "发张动物图", "能发图吗"
-const IMAGE_REQUEST_PATTERNS = /给我(发|来)?(一张|张|几张)?(.{1,20}?)(图片|照片|图)|来(一张|张)?(.{1,20}?)(图|图片|照片)|发(一张|张)?(.{1,20}?)(图|图片|照片)|能发图吗|可以发图吗|发(张|个)?图/;
+selfie —— 想看对方本人的自拍或照片（如"发张你的自拍""让我看看你长什么样""晒张照"）
+image  —— 想要某类图片，但不是看对方本人（如"生成capy图""来张猫咪图""画只兔子""给我看看樱花"）
+chat   —— 普通聊天，不涉及发图
+
+用户消息："${userMessage}"
+
+意图：`,
+        }],
+      }),
+    });
+    if (!res.ok) return 'chat';
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim().toLowerCase() ?? '';
+    if (text.startsWith('selfie')) return 'selfie';
+    if (text.startsWith('image')) return 'image';
+    return 'chat';
+  } catch {
+    return 'chat';
+  }
+}
 
 // Extract the requested image subject from message
 function extractImageSubject(msg) {
   const m = msg.match(
-    /(?:给我(?:发|来)?|来|发)(?:一张|张|几张)?(.{1,20}?)(?:图片|照片|图|的图|的照片)/
+    /(?:给我(?:发|来)?|来|发|生成|画)(?:一张|张|几张)?(.{1,20}?)(?:图片|照片|图|的图|的照片)/
   );
-  return m ? m[1].trim() : msg.replace(/给我|发|来|一张|张|图片|照片|图/g, '').trim() || '可爱的场景';
+  return m ? m[1].trim() : msg.replace(/给我|发|来|生成|画|一张|张|图片|照片|图/g, '').trim() || '可爱的场景';
 }
 
 // Per-persona in-character selfie reactions (text sent before the image)
@@ -85,15 +117,14 @@ function handleImageRequest(openid, userMessage) {
 
 // Call AI Gateway and return parsed reply + update history
 export async function companionChat(openid, userMessage) {
-  // Intercept selfie requests — Claude's safety training will refuse these;
-  // handle entirely in-bridge using persona refDescription instead.
-  if (SELFIE_PATTERNS.test(userMessage)) {
+  // Semantic intent classification — routes image/selfie requests before hitting Claude,
+  // because Claude's RLHF training overrides system prompts for physical-world claims.
+  const intent = await classifyIntent(userMessage);
+
+  if (intent === 'selfie') {
     return handleSelfieRequest(openid, userMessage);
   }
-
-  // Intercept general image requests — Claude also refuses "I can't send images";
-  // extract subject and generate directly.
-  if (IMAGE_REQUEST_PATTERNS.test(userMessage)) {
+  if (intent === 'image') {
     return handleImageRequest(openid, userMessage);
   }
 

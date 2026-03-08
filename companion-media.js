@@ -6,8 +6,9 @@ const IMAGE_MODEL = 'google/gemini-3.1-flash-image-preview';
 const VIDEO_MODEL = 'google/veo-3.1-generate-preview';
 
 export function buildImagePrompt(refDescription, sceneDesc) {
-  if (!refDescription) return sceneDesc;
-  return `${refDescription}。${sceneDesc}`;
+  // sceneDesc for selfies already includes refDescription.
+  // For general images, persona description must NOT be prepended (it overrides the subject).
+  return sceneDesc;
 }
 
 async function generateImage(prompt, refImageUrl) {
