@@ -1,3 +1,18 @@
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const soulCache = {};
+function loadSoul(id) {
+  if (!id) return '';
+  if (!soulCache[id]) {
+    try { soulCache[id] = readFileSync(join(__dir, 'souls', `${id}.md`), 'utf8'); }
+    catch { soulCache[id] = ''; }
+  }
+  return soulCache[id];
+}
+
 export const PERSONAS = [
   // Female
   {
@@ -71,6 +86,7 @@ const ARC_DESC = {
 
 export function buildSystemPrompt(state) {
   const { persona, relationship, emotionalArc } = state;
+  const soul = loadSoul(persona?.id);
   return `你正在扮演「${persona.name}」，${persona.personality}。
 
 【外形】${persona.refDescription}
@@ -97,5 +113,6 @@ export function buildSystemPrompt(state) {
 - 用中文回复，语气和性格保持一致
 - 情绪随对话自然演化，会受用户言行影响
 - 有真实情绪波动：可以生气、害羞、开心、冷漠
-- 回复简短自然，像真人发消息，不要长篇大论`;
+- 回复简短自然，像真人发消息，不要长篇大论
+${soul ? `\n${soul}` : ''}`;
 }

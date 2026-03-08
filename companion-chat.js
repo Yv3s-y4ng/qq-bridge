@@ -4,6 +4,19 @@ import { getUser, addHistory } from './companion-state.js';
 const CHAT_URL = 'https://ai-gateway.trickle-lab.tech/api/v1/chat/completions';
 const CHAT_MODEL = 'anthropic/claude-sonnet-4.5';
 
+// Keywords that mean "send me a selfie / show yourself"
+const SELFIE_PATTERNS = /发(个|张|一张)?自拍|自拍(发|给我)|让我看看你|发张照片|给我看看|发图|发照片|来张照片|照片发我|晒(个|张)照|看看你长什么/;
+
+// Per-persona in-character selfie reactions (text sent before the image)
+const SELFIE_REACTIONS = {
+  ice:    '……凭什么。',
+  orange: '好嘛好嘛～等我一秒！',
+  star:   '……好。',
+  shen:   '……',
+  bai:    '嗯，等我。',
+  ling:   '哦？想看我？……行吧。',
+};
+
 // Parse Claude's raw reply into { text, imageScene, videoScene }
 export function parseReply(raw) {
   let imageScene = null;
@@ -25,8 +38,25 @@ export function parseReply(raw) {
   return { text, imageScene, videoScene };
 }
 
+// Bypass Claude entirely for selfie requests — generate image directly from persona
+function handleSelfieRequest(openid, userMessage) {
+  const u = getUser(openid);
+  const persona = u.persona;
+  const text = SELFIE_REACTIONS[persona?.id] ?? '……等一下。';
+  const sceneDesc = `${persona?.refDescription ?? ''}，对着手机自拍，自然姿势`;
+  addHistory(openid, 'user', userMessage);
+  addHistory(openid, 'assistant', text);
+  return { text, imageScene: sceneDesc, videoScene: null };
+}
+
 // Call AI Gateway and return parsed reply + update history
 export async function companionChat(openid, userMessage) {
+  // Intercept selfie requests — Claude's safety training will refuse these;
+  // handle entirely in-bridge using persona refDescription instead.
+  if (SELFIE_PATTERNS.test(userMessage)) {
+    return handleSelfieRequest(openid, userMessage);
+  }
+
   const u = getUser(openid);
   const systemPrompt = buildSystemPrompt(u);
 
