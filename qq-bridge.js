@@ -203,6 +203,9 @@ async function handleMessage(openid, msgId, content) {
   // --- Companion mode ---
   if (u.mode === 'companion') {
     if (u.setupStep !== 'done') {
+      // Note: custom image upload (option 4 / awaiting_image) requires parsing
+      // QQ image attachment messages — not yet implemented; users see option 4
+      // but images won't be processed until QQ attachment parsing is added.
       await handleSetupStep(openid, msgId, content, sendC2CMessage);
       return;
     }
