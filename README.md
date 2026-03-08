@@ -2,6 +2,10 @@
 
 QQ Bot bridge for HappyCapy / Claude Code. Forwards QQ private messages into your Claude session, and supports an emotional companion mode with AI-generated images and videos.
 
+## 使用教程
+
+**新用户请先查看：https://q.qq.com/qqbot/openclaw/index.html**
+
 ## Features
 
 - **Normal mode** — QQ messages are forwarded to your Claude Code session; Claude replies are sent back to the QQ user
