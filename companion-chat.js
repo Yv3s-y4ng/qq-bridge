@@ -55,7 +55,9 @@ export async function companionChat(openid, userMessage) {
   }
 
   const data = await res.json();
-  const raw = data.choices[0].message.content;
+  const raw = data.choices?.[0]?.message?.content;
+  if (!raw) throw new Error(`Unexpected API response: ${JSON.stringify(data)}`);
+
   const parsed = parseReply(raw);
 
   // Update history (strips media tags internally)
